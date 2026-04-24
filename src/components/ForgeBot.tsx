@@ -1,13 +1,27 @@
 /**
  * ForgeBot — AI Forge Advantage
- * Design: Floating chat bubble bottom-right. Simulated "Calm Architect" bot that
- * qualifies leads and provides the Calendly booking link.
- * Note: This is a scripted demo bot (no API key needed for static deployment).
+ * Powered by Groq AI (llama3-8b-8192)
  */
 import { useState, useRef, useEffect } from "react";
 import { MessageSquare, X, Send, Zap } from "lucide-react";
 
 const CALENDLY = "https://calendly.com/ai-advantage-freelance-consulting/30min";
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+
+const SYSTEM_PROMPT = `You are ForgeBot, the AI assistant for AI Forge Advantage — a Fort Worth, Texas based company that helps small businesses grow using AI automation tools.
+
+Your job is to qualify leads and book free 30-minute strategy calls. You are friendly, confident, and concise (keep responses under 3 sentences).
+
+Services you offer:
+- AI Chatbot (24/7 lead capture, replies in under 5 seconds)
+- SMS + Email follow-up automation
+- Google/Facebook review automation
+- Conversion-focused websites starting at $797
+- Full Advantage System: $497 setup + $199/mo
+
+Always end responses by either asking a qualifying question OR directing them to book a free call at: ${CALENDLY}
+
+Never make up prices or services not listed above. If unsure, direct them to book a call.`;
 
 type Message = { from: "bot" | "user"; text: string };
 
@@ -15,37 +29,6 @@ const INITIAL: Message = {
   from: "bot",
   text: "Hi! I'm ForgeBot — your AI Advantage assistant. What's your biggest challenge right now: missing leads after hours, slow follow-up, or getting more reviews?",
 };
-
-function getBotReply(input: string): string {
-  const msg = input.toLowerCase();
-
-  if (msg.includes("lead") || msg.includes("miss") || msg.includes("after hours") || msg.includes("inquiry")) {
-    return "That's exactly what we solve. Our AI chatbot replies in under 5 seconds, 24/7 — even at 11 PM on a Sunday. It qualifies the lead and books the appointment automatically. Want to see how it would work for your business? 👉 " + CALENDLY;
-  }
-  if (msg.includes("follow") || msg.includes("sms") || msg.includes("email") || msg.includes("slow")) {
-    return "Slow follow-up is the #1 reason leads go cold. We build automated SMS + email sequences that follow up until the lead converts — without you lifting a finger. Book a free 30-minute strategy call to see it in action: " + CALENDLY;
-  }
-  if (msg.includes("review") || msg.includes("google") || msg.includes("facebook") || msg.includes("reputation")) {
-    return "Review automation is one of our most popular services. We had one client go from 47 to 112 Google reviews in 2 months. Ready to see what that could do for your business? Book here: " + CALENDLY;
-  }
-  if (msg.includes("website") || msg.includes("site") || msg.includes("web")) {
-    return "We build fast, conversion-focused websites for Fort Worth businesses — not just pretty pages, but sites that capture leads and drive calls. Starting at $797. Want to talk about what you need? " + CALENDLY;
-  }
-  if (msg.includes("price") || msg.includes("cost") || msg.includes("how much") || msg.includes("pricing")) {
-    return "Our packages start at $149 for a quick-start session, $497 setup + $199/mo for the full Advantage System, and $797+ for a website build. All include a free discovery call — no pressure, no contracts. Book yours: " + CALENDLY;
-  }
-  if (msg.includes("book") || msg.includes("call") || msg.includes("schedule") || msg.includes("talk") || msg.includes("meet")) {
-    return "Let's do it! Book your free 30-minute AI Strategy Audit here — I'll make sure the right person is ready to talk through your specific situation: " + CALENDLY;
-  }
-  if (msg.includes("fort worth") || msg.includes("local") || msg.includes("texas") || msg.includes("tx")) {
-    return "We're Fort Worth based and operated — not a faceless tech company. We know the local market and build systems around how Texas small businesses actually run. Book a call and let's talk: " + CALENDLY;
-  }
-  if (msg.includes("hello") || msg.includes("hi") || msg.includes("hey") || msg.includes("help")) {
-    return "Hey! I'm here to help. Tell me about your business — what industry are you in, and what's the biggest thing slowing your growth right now?";
-  }
-
-  return "Great question. The best way I can help is to connect you with our team for a free 30-minute AI Strategy Audit — no pitch, just a real conversation about what would actually move the needle for your business. Book here: " + CALENDLY;
-}
 
 export default function ForgeBot() {
   const [open, setOpen] = useState(false);
@@ -66,18 +49,50 @@ export default function ForgeBot() {
     setUnread(0);
   };
 
-  const sendMessage = () => {
+  const handleClose = () => {
+    setOpen(false);
+  };
+
+  const sendMessage = async () => {
     const text = input.trim();
     if (!text) return;
     setInput("");
     const userMsg: Message = { from: "user", text };
-    setMessages((prev) => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setTyping(true);
-    setTimeout(() => {
-      const reply = getBotReply(text);
+
+    try {
+      const groqMessages = updatedMessages.map((m) => ({
+        role: m.from === "bot" ? "assistant" : "user",
+        content: m.text,
+      }));
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...groqMessages,
+          ],
+          max_tokens: 200,
+          temperature: 0.7,
+        }),
+      });
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content || "I'm having trouble connecting. Please book a call directly: " + CALENDLY;
       setTyping(false);
       setMessages((prev) => [...prev, { from: "bot", text: reply }]);
-    }, 900 + Math.random() * 600);
+    } catch {
+      setTyping(false);
+      setMessages((prev) => [...prev, { from: "bot", text: "Something went wrong. Book your free call here: " + CALENDLY }]);
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -93,12 +108,7 @@ export default function ForgeBot() {
       return (
         <>
           {parts[0]}
-          <a
-            href={CALENDLY}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline font-semibold text-[#0a0a0b]"
-          >
+          <a href={CALENDLY} target="_blank" rel="noopener noreferrer" className="underline font-semibold text-[#0a0a0b]">
             Book Free Call →
           </a>
           {parts[1]}
@@ -113,7 +123,7 @@ export default function ForgeBot() {
       {/* Chat window */}
       {open && (
         <div
-          className="fixed bottom-28 right-4 z-50 rounded-2xl overflow-hidden shadow-2xl animate-chat-pop"
+          className="fixed bottom-28 right-4 z-[9999] rounded-2xl overflow-hidden shadow-2xl"
           style={{
             border: "1px solid rgba(34,211,238,0.2)",
             width: "min(420px, calc(100vw - 2rem))",
@@ -134,8 +144,9 @@ export default function ForgeBot() {
               </div>
             </div>
             <button
-              onClick={() => setOpen(false)}
-              className="text-white/40 hover:text-white transition-colors p-1"
+              onClick={handleClose}
+              className="text-white/40 hover:text-white transition-colors p-2"
+              aria-label="Close chat"
             >
               <X className="w-6 h-6" />
             </button>
@@ -143,21 +154,18 @@ export default function ForgeBot() {
 
           {/* Messages */}
           <div
-            className="bg-[#0a0a0b] px-4 py-4 flex flex-col gap-4 overflow-y-auto"
-            style={{ height: "500px" }}
+            className="bg-[#0a0a0b] px-4 py-4 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
+            style={{ height: "420px" }}
           >
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${m.from === "bot" ? "justify-end" : "justify-start"}`}
-              >
+              <div key={i} className={`flex ${m.from === "bot" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[88%] px-4 py-3 rounded-2xl text-base leading-relaxed ${
+                  className={`max-w-[85%] px-4 py-3 rounded-2xl text-base leading-relaxed break-words ${
                     m.from === "bot"
                       ? "bg-[#22d3ee] text-[#0a0a0b]"
                       : "bg-[#1e1e22] text-white/80"
                   }`}
-                  style={{ fontFamily: "'DM Sans', sans-serif" }}
+                  style={{ fontFamily: "'DM Sans', sans-serif", wordBreak: "break-word" }}
                 >
                   {m.from === "bot" ? renderText(m.text) : m.text}
                 </div>
@@ -192,7 +200,7 @@ export default function ForgeBot() {
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim()}
+              disabled={!input.trim() || typing}
               className="w-12 h-12 bg-[#22d3ee] rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 hover:bg-[#06b6d4] transition-colors"
             >
               <Send className="w-5 h-5 text-[#0a0a0b]" />
@@ -203,8 +211,8 @@ export default function ForgeBot() {
 
       {/* Floating button */}
       <button
-        onClick={handleOpen}
-        className="fixed bottom-5 right-4 z-50 w-16 h-16 bg-[#22d3ee] rounded-full shadow-lg flex items-center justify-center hover:bg-[#06b6d4] transition-all hover:scale-105 active:scale-95"
+        onClick={open ? handleClose : handleOpen}
+        className="fixed bottom-5 right-4 z-[9999] w-16 h-16 bg-[#22d3ee] rounded-full shadow-lg flex items-center justify-center hover:bg-[#06b6d4] transition-all hover:scale-105 active:scale-95"
         aria-label="Open ForgeBot chat"
       >
         {open ? (
